@@ -2,10 +2,7 @@
 
 Веб-приложение для заметок с регистрацией и входом.
 
-![Главный экран](дизайны/3-неон-главная.png)
-
 Есть пять дизайнов на выбор (кнопка 🎨 в шапке): Неон, Классика, Бумага, Стекло и Брутализм.
-Скриншоты всех вариантов лежат в папке [дизайны](дизайны/).
 
 - **Фронтенд** — `frontend/` (HTML, CSS, JS без сборки)
 - **Бэкенд** — `backend/` (Python, FastAPI, SQLite)
@@ -17,6 +14,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
 .venv/bin/uvicorn backend.main:app --reload
 ```
+
+Или просто запустите `backend/main.py` кнопкой ▶ в VS Code (интерпретатор — `.venv`).
 
 Откройте http://localhost:8000. Сервер отдаёт и API, и фронтенд.
 Документация API: http://localhost:8000/docs

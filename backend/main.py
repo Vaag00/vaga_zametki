@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -14,8 +15,13 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from . import security
-from .db import get_db, init_db
+if not __package__:
+    # Файл запущен напрямую (кнопка ▶ или `python backend/main.py`):
+    # добавляем корень проекта, чтобы нашёлся пакет backend
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from backend import security
+from backend.db import get_db, init_db
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 SESSION_COOKIE = "session"
@@ -267,3 +273,9 @@ def restore_note(note_id: str, user=Depends(current_user), db: sqlite3.Connectio
 
 # Фронтенд отдаётся тем же сервером — монтируем последним, после /api
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)
