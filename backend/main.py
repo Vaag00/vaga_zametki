@@ -11,9 +11,10 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 if not __package__:
     # Файл запущен напрямую (кнопка ▶ или `python backend/main.py`):
@@ -40,6 +41,15 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Notes API", lifespan=lifespan)
+
+# Разрешаем фронтенду с локальных dev-серверов (Live Server и т.п.) ходить в API с cookie
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(RequestValidationError)
@@ -101,6 +111,12 @@ class NoteIn(BaseModel):
             if t and t not in seen:
                 seen.append(t)
         return seen
+
+    @model_validator(mode="after")
+    def check_pinned_archived(self):
+        if self.pinned and self.archived:
+            raise ValueError("Закреплённая заметка не может быть в архиве")
+        return self
 
 
 class NotePatch(NoteIn):
@@ -172,10 +188,14 @@ def register(data: RegisterIn, response: Response, db: sqlite3.Connection = Depe
     if db.execute("SELECT 1 FROM users WHERE username_key = ?", (data.username.casefold(),)).fetchone():
         raise HTTPException(409, "Этот логин уже занят")
     now = now_iso()
-    cur = db.execute(
-        "INSERT INTO users (username, username_key, password_hash, created_at) VALUES (?, ?, ?, ?)",
-        (data.username, data.username.casefold(), security.hash_password(data.password), now),
-    )
+    try:
+        cur = db.execute(
+            "INSERT INTO users (username, username_key, password_hash, created_at) VALUES (?, ?, ?, ?)",
+            (data.username, data.username.casefold(), security.hash_password(data.password), now),
+        )
+    except sqlite3.IntegrityError:
+        # Параллельный запрос успел занять логин между проверкой и INSERT
+        raise HTTPException(409, "Этот логин уже занят")
     user_id = cur.lastrowid
     db.execute(
         """INSERT INTO notes (id, user_id, title, body, tags, color, pinned, created_at, updated_at)

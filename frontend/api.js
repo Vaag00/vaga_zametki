@@ -6,17 +6,24 @@ class ApiError extends Error {
   }
 }
 
+// Если страница открыта не с бэкенда (например, через Live Server),
+// ходим в API на порт 8000 того же хоста — cookie при этом остаются same-site
+const BACKEND_PORT = '8000';
+const API_BASE = location.protocol.startsWith('http') && location.port !== BACKEND_PORT
+  ? `${location.protocol}//${location.hostname}:${BACKEND_PORT}/api`
+  : '/api';
+
 async function request(method, path, body) {
   let res;
   try {
-    res = await fetch('/api' + path, {
+    res = await fetch(API_BASE + path, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : {},
       body: body ? JSON.stringify(body) : undefined,
-      credentials: 'same-origin',
+      credentials: 'include',
     });
   } catch {
-    throw new ApiError(0, 'Нет связи с сервером');
+    throw new ApiError(0, 'Бэкенд не отвечает. Запустите сервер: .venv/bin/uvicorn backend.main:app --reload');
   }
   if (res.status === 204) return null;
   // Ответ не JSON — значит, на запрос ответил не наш бэкенд

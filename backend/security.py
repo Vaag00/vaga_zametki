@@ -16,9 +16,10 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, stored: str) -> bool:
     try:
         _, salt_hex, digest_hex = stored.split("$")
+        salt = bytes.fromhex(salt_hex)
     except ValueError:
         return False
-    digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex), n=_N, r=_R, p=_P)
+    digest = hashlib.scrypt(password.encode(), salt=salt, n=_N, r=_R, p=_P)
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
