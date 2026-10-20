@@ -1,0 +1,54 @@
+name: Windows check
+
+on: [push, workflow_dispatch]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Copy project to Desktop (cyrillic + space), add a macOS .venv
+        shell: pwsh
+        run: |
+          $dst = "$env:USERPROFILE\Desktop\Мой проект"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item -Recurse -Force * $dst
+          New-Item -ItemType Directory -Force -Path "$dst\.venv\bin" | Out-Null
+          Set-Content "$dst\.venv\bin\python" "mac binary"
+          "DST=$dst" >> $env:GITHUB_ENV
+
+      - name: Run start.bat and register a user
+        shell: pwsh
+        run: |
+          $env:NOTES_NO_BROWSER = "1"
+          $p = Start-Process cmd.exe -ArgumentList '/c', "`"$env:DST\start.bat`" > `"$env:DST\server.log`" 2>&1" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            try { Invoke-WebRequest http://localhost:8000/ -UseBasicParsing | Out-Null; $ok = $true; break } catch { Start-Sleep 2 }
+          }
+          Get-Content "$env:DST\server.log"
+          if (-not $ok) { throw "server did not start" }
+
+          $s = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+          $body = '{"username":"тестер","password":"password123"}'
+          $r = Invoke-WebRequest http://localhost:8000/api/auth/register -Method Post -Body ([Text.Encoding]::UTF8.GetBytes($body)) -ContentType "application/json; charset=utf-8" -WebSession $s -UseBasicParsing
+          "register: $($r.StatusCode) $($r.Content)"
+          $me = Invoke-WebRequest http://localhost:8000/api/auth/me -WebSession $s -UseBasicParsing
+          "me: $($me.StatusCode) $($me.Content)"
+          foreach ($f in "app.js", "api.js", "styles.css") {
+            $h = (Invoke-WebRequest "http://localhost:8000/$f" -UseBasicParsing).Headers["Content-Type"]
+            "$f -> $h"
+            if ($h -like "*text/plain*") { throw "$f served as $h" }
+          }
+          if (Test-Path "$env:DST\.venv\bin") { throw "mac .venv was not replaced" }
+
+      - name: Tests
+        shell: pwsh
+        run: |
+          cd $env:DST
+          .venv\Scripts\python -m pip install -q -r notes-tests\backend\requirements-dev.txt
+          .venv\Scripts\python -m pytest notes-tests -q
