@@ -23,7 +23,7 @@ async function request(method, path, body) {
       credentials: 'include',
     });
   } catch {
-    throw new ApiError(0, 'Бэкенд не отвечает. Запустите сервер: .venv/bin/uvicorn backend.main:app --reload');
+    throw new ApiError(0, 'Бэкенд не отвечает. Запустите сервер (на Windows — двойной клик по start.bat) и откройте http://localhost:8000');
   }
   if (res.status === 204) return null;
   // Ответ не JSON — значит, на запрос ответил не наш бэкенд
