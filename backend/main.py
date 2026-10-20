@@ -1,4 +1,5 @@
 import json
+import mimetypes
 import os
 import re
 import sqlite3
@@ -23,6 +24,11 @@ if not __package__:
 
 from backend import security
 from backend.db import get_db, init_db
+
+# На Windows MIME-типы берутся из реестра, и там .js/.css бывают text/plain —
+# тогда браузер не применяет стили и скрипты. Задаём их явно.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 SESSION_COOKIE = "session"
