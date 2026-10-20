@@ -5,6 +5,7 @@ on: [push, workflow_dispatch]
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,32 +24,39 @@ jobs:
 
       - name: Run start.bat and register a user
         shell: pwsh
+        timeout-minutes: 5
         run: |
           $env:NOTES_NO_BROWSER = "1"
           $p = Start-Process cmd.exe -ArgumentList '/c', "`"$env:DST\start.bat`" > `"$env:DST\server.log`" 2>&1" -PassThru
           $ok = $false
           for ($i = 0; $i -lt 90; $i++) {
-            try { Invoke-WebRequest http://localhost:8000/ -UseBasicParsing | Out-Null; $ok = $true; break } catch { Start-Sleep 2 }
+            try { Invoke-WebRequest http://localhost:8000/ -UseBasicParsing -TimeoutSec 5 | Out-Null; $ok = $true; break } catch { Start-Sleep 2 }
           }
           Get-Content "$env:DST\server.log"
-          if (-not $ok) { throw "server did not start" }
+          if (-not $ok) { Write-Output "::error::server did not start"; throw "server did not start" }
 
           $s = New-Object Microsoft.PowerShell.Commands.WebRequestSession
           $body = '{"username":"тестер","password":"password123"}'
-          $r = Invoke-WebRequest http://localhost:8000/api/auth/register -Method Post -Body ([Text.Encoding]::UTF8.GetBytes($body)) -ContentType "application/json; charset=utf-8" -WebSession $s -UseBasicParsing
-          "register: $($r.StatusCode) $($r.Content)"
-          $me = Invoke-WebRequest http://localhost:8000/api/auth/me -WebSession $s -UseBasicParsing
-          "me: $($me.StatusCode) $($me.Content)"
+          $r = Invoke-WebRequest http://localhost:8000/api/auth/register -Method Post -Body ([Text.Encoding]::UTF8.GetBytes($body)) -ContentType "application/json; charset=utf-8" -WebSession $s -UseBasicParsing -TimeoutSec 10
+          Write-Output "::notice::register $($r.StatusCode) $($r.Content)"
+          $me = Invoke-WebRequest http://localhost:8000/api/auth/me -WebSession $s -UseBasicParsing -TimeoutSec 10
+          Write-Output "::notice::me $($me.StatusCode) $($me.Content)"
           foreach ($f in "app.js", "api.js", "styles.css") {
             $h = (Invoke-WebRequest "http://localhost:8000/$f" -UseBasicParsing).Headers["Content-Type"]
-            "$f -> $h"
+            Write-Output "::notice::$f -> $h"
             if ($h -like "*text/plain*") { throw "$f served as $h" }
           }
           if (Test-Path "$env:DST\.venv\bin") { throw "mac .venv was not replaced" }
+          Write-Output "::notice::mac .venv replaced OK"
+          # останавливаем сервер, иначе шаг не завершится
+          taskkill /PID $p.Id /T /F | Out-Null
+          Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
 
       - name: Tests
         shell: pwsh
         run: |
           cd $env:DST
           .venv\Scripts\python -m pip install -q pytest httpx
-          .venv\Scripts\python -m pytest notes-tests -q
+          .venv\Scripts\python -m pytest notes-tests -q 2>&1 | Tee-Object -Variable out
+          Write-Output "::notice::pytest $($out[-1])"
+          if ($LASTEXITCODE -ne 0) { throw "tests failed" }
