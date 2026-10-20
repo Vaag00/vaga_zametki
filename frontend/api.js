@@ -1,4 +1,4 @@
-// Клиент для бэкенда. Сессия хранится в HttpOnly-cookie, её ставит сервер.
+// «Бэкенд» на localStorage — работает через Go Live и file://, сервер не нужен.
 class ApiError extends Error {
   constructor(status, message) {
     super(message);
@@ -6,50 +6,115 @@ class ApiError extends Error {
   }
 }
 
-// Если страница открыта не с бэкенда (например, через Live Server),
-// ходим в API на порт 8000 того же хоста — cookie при этом остаются same-site
-const BACKEND_PORT = '8000';
-const API_BASE = location.protocol.startsWith('http') && location.port !== BACKEND_PORT
-  ? `${location.protocol}//${location.hostname}:${BACKEND_PORT}/api`
-  : '/api';
-
-async function request(method, path, body) {
-  let res;
-  try {
-    res = await fetch(API_BASE + path, {
-      method,
-      headers: body ? { 'Content-Type': 'application/json' } : {},
-      body: body ? JSON.stringify(body) : undefined,
-      credentials: 'include',
-    });
-  } catch {
-    throw new ApiError(0, 'Бэкенд не отвечает. Запустите сервер (на Windows — двойной клик по start.bat) и откройте http://localhost:8000');
-  }
-  if (res.status === 204) return null;
-  // Ответ не JSON — значит, на запрос ответил не наш бэкенд
-  // (например, страница открыта через Live Server или как файл)
-  if (!res.headers.get('content-type')?.includes('application/json')) {
-    throw new ApiError(res.status, 'Бэкенд не отвечает. Запустите сервер и откройте http://localhost:8000');
-  }
-  const data = await res.json().catch(() => null);
-  if (!res.ok) {
-    const msg = typeof data?.detail === 'string' ? data.detail : 'Ошибка сервера';
-    throw new ApiError(res.status, msg);
-  }
-  return data;
+/* ---------- хранилище ---------- */
+function load(key, def) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; }
+}
+function save(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
 
+const getUsers   = () => load('_users', {});
+const getNotes   = () => load('_notes', []);
+const getSession = () => load('_session', null);
+const saveUsers  = u => save('_users', u);
+const saveNotes  = n => save('_notes', n);
+const saveSession = s => save('_session', s);
+
+const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+const now = () => new Date().toISOString();
+
+function currentUser() {
+  const s = getSession();
+  if (!s) return null;
+  return getUsers()[s] ? { username: s } : null;
+}
+function requireUser() {
+  const u = currentUser();
+  if (!u) throw new ApiError(401, 'Не авторизован');
+  return u;
+}
+
+/* ---------- Auth ---------- */
 const Auth = {
-  me: () => request('GET', '/auth/me'),
-  login: (username, password) => request('POST', '/auth/login', { username, password }),
-  register: (username, password) => request('POST', '/auth/register', { username, password }),
-  logout: () => request('POST', '/auth/logout'),
+  me() {
+    const u = currentUser();
+    if (!u) throw new ApiError(401, 'Не авторизован');
+    return Promise.resolve({ username: u.username });
+  },
+  login(username, password) {
+    const key = username.toLowerCase().trim();
+    const users = getUsers();
+    if (!users[key] || users[key].password !== password)
+      throw new ApiError(401, 'Неверный логин или пароль');
+    saveSession(key);
+    return Promise.resolve({ username: key });
+  },
+  register(username, password) {
+    const key = username.toLowerCase().trim();
+    if (!/^[\w.\-а-яёА-ЯЁ]{3,30}$/u.test(key))
+      throw new ApiError(422, 'Логин: 3–30 символов, только буквы, цифры, _ . -');
+    if (!password || password.length < 8)
+      throw new ApiError(422, 'Пароль должен быть не менее 8 символов');
+    const users = getUsers();
+    if (users[key]) throw new ApiError(409, 'Пользователь уже существует');
+    users[key] = { password };
+    saveUsers(users);
+    saveSession(key);
+    return Promise.resolve({ username: key });
+  },
+  logout() {
+    saveSession(null);
+    return Promise.resolve(null);
+  },
 };
 
+/* ---------- NotesStore ---------- */
 const NotesStore = {
-  list: () => request('GET', '/notes'),
-  create: data => request('POST', '/notes', data),
-  update: (id, patch) => request('PATCH', `/notes/${encodeURIComponent(id)}`, patch),
-  remove: id => request('DELETE', `/notes/${encodeURIComponent(id)}`),
-  restore: id => request('POST', `/notes/${encodeURIComponent(id)}/restore`),
+  list() {
+    const u = requireUser();
+    return Promise.resolve(getNotes().filter(n => n.owner === u.username && !n.deleted_at));
+  },
+  create(data) {
+    const u = requireUser();
+    const note = {
+      id: uid(), owner: u.username,
+      title: data.title ?? '', body: data.body ?? '',
+      tags: data.tags ?? [], color: data.color ?? 'default',
+      pinned: data.pinned ?? false, archived: data.archived ?? false,
+      created_at: now(), updated_at: now(), deleted_at: null,
+    };
+    const notes = getNotes();
+    notes.push(note);
+    saveNotes(notes);
+    return Promise.resolve(note);
+  },
+  update(id, patch) {
+    const u = requireUser();
+    const notes = getNotes();
+    const i = notes.findIndex(n => n.id === id && n.owner === u.username);
+    if (i === -1) throw new ApiError(404, 'Заметка не найдена');
+    Object.assign(notes[i], patch, { updated_at: now() });
+    saveNotes(notes);
+    return Promise.resolve(notes[i]);
+  },
+  remove(id) {
+    const u = requireUser();
+    const notes = getNotes();
+    const i = notes.findIndex(n => n.id === id && n.owner === u.username);
+    if (i === -1) throw new ApiError(404, 'Заметка не найдена');
+    notes[i].deleted_at = now();
+    saveNotes(notes);
+    return Promise.resolve(null);
+  },
+  restore(id) {
+    const u = requireUser();
+    const notes = getNotes();
+    const i = notes.findIndex(n => n.id === id && n.owner === u.username);
+    if (i === -1) throw new ApiError(404, 'Заметка не найдена');
+    notes[i].deleted_at = null;
+    notes[i].updated_at = now();
+    saveNotes(notes);
+    return Promise.resolve(notes[i]);
+  },
 };
