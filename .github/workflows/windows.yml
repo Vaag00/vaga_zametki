@@ -50,5 +50,5 @@ jobs:
         shell: pwsh
         run: |
           cd $env:DST
-          .venv\Scripts\python -m pip install -q -r notes-tests\backend\requirements-dev.txt
+          .venv\Scripts\python -m pip install -q pytest httpx
           .venv\Scripts\python -m pytest notes-tests -q
