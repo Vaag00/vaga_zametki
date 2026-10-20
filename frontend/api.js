@@ -89,8 +89,8 @@ const NotesStore = {
       color: data.color ?? 'default',
       pinned: data.pinned ?? false,
       archived: data.archived ?? false,
-      created_at: _now(),
-      updated_at: _now(),
+      createdAt: _now(),
+      updatedAt: _now(),
       deleted_at: null,
     };
     const notes = _getNotes();
@@ -104,7 +104,7 @@ const NotesStore = {
     const notes = _getNotes();
     const i = notes.findIndex(n => n.id === id && n.owner === u.username);
     if (i === -1) throw new ApiError(404, 'Заметка не найдена');
-    Object.assign(notes[i], patch, { updated_at: _now() });
+    Object.assign(notes[i], patch, { updatedAt: _now() });
     _save('app_notes', notes);
     return notes[i];
   },
@@ -125,7 +125,7 @@ const NotesStore = {
     const i = notes.findIndex(n => n.id === id && n.owner === u.username);
     if (i === -1) throw new ApiError(404, 'Заметка не найдена');
     notes[i].deleted_at = null;
-    notes[i].updated_at = _now();
+    notes[i].updatedAt = _now();
     _save('app_notes', notes);
     return notes[i];
   },
