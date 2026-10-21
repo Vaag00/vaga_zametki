@@ -438,6 +438,12 @@ function renderDesignMenu() {
 function toggleDesignMenu(open = els.designMenu.hidden) {
   els.designMenu.hidden = !open;
   els.designBtn.setAttribute('aria-expanded', open);
+  els.designMenu.style.cssText = '';
+  if (open && window.innerWidth <= 800) {
+    const rect = els.designBtn.getBoundingClientRect();
+    els.designMenu.style.cssText =
+      `position:fixed;top:${Math.round(rect.bottom + 8)}px;right:16px;left:auto;width:min(260px,calc(100vw - 32px))`;
+  }
 }
 
 /* ---------- События ---------- */
