@@ -48,6 +48,7 @@ const els = {
   cancelBtn: $('#cancel-btn'),
   meta: $('#meta'),
   toast: $('#toast'),
+  trashZone: $('#trash-zone'),
   app: $('#app'),
   auth: $('#auth'),
   authTabs: document.querySelectorAll('.auth-tab'),
@@ -139,6 +140,7 @@ function noteCard(note) {
   card.className = 'note';
   card.dataset.color = note.color;
   card.tabIndex = 0;
+  card.draggable = true;
   const title = note.title || (note.body ? '' : 'Без названия');
   card.innerHTML = `
     <button class="icon-btn quick ${note.pinned ? 'on' : ''}" title="${note.pinned ? 'Открепить' : 'Закрепить'}">${note.pinned ? '📌' : '📍'}</button>
@@ -153,6 +155,20 @@ function noteCard(note) {
   });
   card.addEventListener('click', () => openEditor(note));
   card.addEventListener('keydown', e => { if (e.key === 'Enter') openEditor(note); });
+
+  // Drag & Drop — перетаскивание в урну
+  card.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', note.id);
+    e.dataTransfer.effectAllowed = 'move';
+    card.classList.add('dragging');
+    els.trashZone.hidden = false;
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    els.trashZone.hidden = true;
+    els.trashZone.classList.remove('over');
+  });
+
   return card;
 }
 
@@ -530,5 +546,22 @@ async function init() {
     if (err.status !== 401) toast(err.message);
   }
 }
+
+/* ---------- Урна (drag & drop) ---------- */
+els.trashZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  els.trashZone.classList.add('over');
+});
+els.trashZone.addEventListener('dragleave', () => {
+  els.trashZone.classList.remove('over');
+});
+els.trashZone.addEventListener('drop', async e => {
+  e.preventDefault();
+  const id = e.dataTransfer.getData('text/plain');
+  els.trashZone.hidden = true;
+  els.trashZone.classList.remove('over');
+  if (id) await deleteNote(id);
+});
 
 init();
